@@ -2354,6 +2354,14 @@ func (s *Server) GenerateRoutes() (http.Handler, error) {
 		allowedHostsMiddleware(s.addr),
 	)
 
+	if path := envconfig.GuardConfig(); path != "" {
+		guard, err := guardMiddleware(path)
+		if err != nil {
+			return nil, err
+		}
+		r.Use(guard)
+	}
+
 	// General
 	r.HEAD("/", func(c *gin.Context) { c.String(http.StatusOK, "Ollama is running") })
 	r.GET("/", func(c *gin.Context) { c.String(http.StatusOK, "Ollama is running") })

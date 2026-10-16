@@ -230,6 +230,33 @@ OLLAMA_ORIGINS=chrome-extension://*,moz-extension://*,safari-web-extension://* o
 
 Refer to the section [above](#how-do-i-configure-ollama-server) for how to set environment variables on your platform.
 
+## How can I protect an Ollama server that is reachable from other machines?
+
+Ollama has no authentication. If you expose it with `OLLAMA_HOST=0.0.0.0`, put it behind a firewall or a reverse proxy that authenticates requests. As an additional, optional layer, set `OLLAMA_GUARD_CONFIG` to the path of a JSON file to enable a network guard with an IP allowlist, per-client rate limits and automatic bans. The guard is off unless this variable is set.
+
+```json
+{
+  "allowed_ips": ["192.168.1.0/24"],
+  "rate_limit": 100,
+  "rate_limit_window": 60,
+  "ban_threshold": 10,
+  "ban_duration": 300
+}
+```
+
+All fields are optional:
+
+| Field | Default | Description |
+|---|---|---|
+| `allowed_ips` | none | If set, only these IPs or CIDRs may connect |
+| `blocked_ips` | none | IPs or CIDRs that are always rejected |
+| `trusted_proxies` | `["127.0.0.1", "::1"]` | Peers whose `X-Forwarded-For` header is trusted to identify the client |
+| `rate_limit`, `rate_limit_window` | `100`, `60` | Requests allowed per client per window in seconds (`rate_limit: 0` disables rate limiting) |
+| `ban_threshold`, `ban_duration` | `10`, `3600` | Rate-limit violations before a client is banned, and the ban length in seconds |
+| `scan_requests` | `false` | Reject requests whose path, query or headers match known attack patterns |
+
+Rejected requests receive `403` or `429`. Request bodies (prompts, chat messages, model uploads) are never inspected, and state is kept in memory, so it is reset when the server restarts.
+
 ## Where are models stored?
 
 - macOS: `~/.ollama/models`
