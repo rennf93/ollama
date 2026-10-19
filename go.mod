@@ -29,7 +29,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/rennf93/gin-guard v1.5.0
-	github.com/rennf93/guard-core-go/v4 v4.4.0
+	github.com/rennf93/guard-core-go/v4 v4.4.1
 	github.com/tkrajina/typescriptify-golang-structs v0.2.0
 	github.com/tree-sitter/go-tree-sitter v0.25.0
 	github.com/tree-sitter/tree-sitter-cpp v0.23.4
