@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -53,7 +54,7 @@ func TestGuardDisabledAddsNoMiddleware(t *testing.T) {
 	if len(on.Handlers) != len(off.Handlers)+1 {
 		t.Fatalf("handlers: disabled %d, enabled %d, want exactly one more", len(off.Handlers), len(on.Handlers))
 	}
-	for i := 0; i < 300; i++ {
+	for i := range 300 {
 		if w := guardGet(off, "192.0.2.10", "/api/version", nil); w.Code != http.StatusOK {
 			t.Fatalf("request %d: status %d with guard disabled", i, w.Code)
 		}
@@ -63,7 +64,7 @@ func TestGuardDisabledAddsNoMiddleware(t *testing.T) {
 func TestGuardRateLimitAndCORSOnRejection(t *testing.T) {
 	r := guardRouter(t, `{"rate_limit": 3, "rate_limit_window": 60}`)
 	hdr := map[string]string{"Origin": "http://localhost"}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if w := guardGet(r, "192.0.2.10", "/api/version", hdr); w.Code != http.StatusOK {
 			t.Fatalf("request %d: status %d, want 200", i, w.Code)
 		}
@@ -107,7 +108,7 @@ func TestGuardIgnoresForwardedForFromUntrustedPeer(t *testing.T) {
 func TestGuardRotatingForwardedForDoesNotEvadeRateLimit(t *testing.T) {
 	r := guardRouter(t, `{"rate_limit": 2, "rate_limit_window": 60}`)
 	var last int
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		hdr := map[string]string{"X-Forwarded-For": fmt.Sprintf("203.0.113.%d", i+1)}
 		last = guardGet(r, "198.51.100.7", "/api/version", hdr).Code
 	}
@@ -165,29 +166,34 @@ func TestGuardDoesNotBufferStreamingResponses(t *testing.T) {
 	})
 	srv := httptest.NewServer(r)
 	defer srv.Close()
+	defer close(release)
 
-	resp, err := http.Post(srv.URL+"/stream", "application/json", strings.NewReader(`{"prompt":"hello"}`))
+	// A buffering guard sends nothing until the handler returns, which only happens
+	// after release, so the request runs into the timeout instead of the first chunk.
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL+"/stream", strings.NewReader(`{"prompt":"hello"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("first chunk was not delivered before the handler finished: %v", err)
+	}
 	defer resp.Body.Close()
 	buf := make([]byte, 6)
-	got := make(chan string, 1)
-	go func() { io.ReadFull(resp.Body, buf); got <- string(buf) }()
-	select {
-	case s := <-got:
-		if s != "first\n" {
-			t.Fatalf("first chunk = %q", s)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("first chunk was not delivered before the handler finished")
+	if _, err := io.ReadFull(resp.Body, buf); err != nil {
+		t.Fatalf("first chunk was not delivered before the handler finished: %v", err)
 	}
-	close(release)
+	if string(buf) != "first\n" {
+		t.Fatalf("first chunk = %q", buf)
+	}
 }
 
 func TestGuardRejectsBadConfig(t *testing.T) {
 	for name, cfg := range map[string]string{
-		"unknown field": `{"alowed_ips": ["192.0.2.1"]}`,
+		"unknown field": `{"allow_ips": ["192.0.2.1"]}`,
 		"bad ip":        `{"allowed_ips": ["not-an-ip"]}`,
 		"not json":      `allow all`,
 	} {
@@ -208,7 +214,7 @@ func TestGuardRejectsBadConfig(t *testing.T) {
 
 func TestGuardRateLimitZeroDisablesRateLimiting(t *testing.T) {
 	r := guardRouter(t, `{"rate_limit": 0}`)
-	for i := 0; i < 300; i++ {
+	for i := range 300 {
 		if w := guardGet(r, "192.0.2.10", "/api/version", nil); w.Code != http.StatusOK {
 			t.Fatalf("request %d: status %d", i, w.Code)
 		}
